@@ -1,0 +1,59 @@
+name: Build-Test-Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  # ---------- STAGE 1 + 2: BUILD and TEST ----------
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Docker image
+        run: docker build -t devops-demo:${{ github.sha }} .
+
+      - name: Smoke test the container
+        run: |
+          docker run -d -p 3000:3000 --name smoke devops-demo:${{ github.sha }}
+          sleep 3
+          curl -f http://localhost:3000/health
+          docker rm -f smoke
+
+  # ---------- STAGE 3: DEPLOY to AWS EC2 ----------
+  deploy:
+    needs: build-and-test          # runs only if tests pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd ~
+            if [ ! -d devops-demo ]; then
+              git clone https://github.com/${{ github.repository }}.git devops-demo
+            fi
+            cd devops-demo
+            git fetch origin main
+            git reset --hard origin/main
+            docker build -t devops-demo:latest .
+            docker rm -f devops-demo || true
+            docker run -d --restart always -p 80:3000 \
+              -e APP_VERSION=${{ github.sha }} \
+              --name devops-demo devops-demo:latest
+            sleep 3
+            curl -f http://localhost/health

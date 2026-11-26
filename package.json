@@ -1,0 +1,10 @@
+{
+  "name": "devops-demo",
+  "version": "1.0.0",
+  "description": "Build, test and deploy demo for AWS EC2",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "node --test"
+  }
+}
